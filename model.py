@@ -8,11 +8,10 @@ import keras.backend as K
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping
-from keras.losses import sparse_categorical_crossentropy
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
-from attention import SeqSelfAttention
-from bert4keras.models import build_transformer_model
+from langml.plm.bert import load_bert
+from langml.layers import SelfAttention
 
 
 class Sampling(L.Layer):
@@ -135,22 +134,27 @@ class NonMasking(L.Layer):
 
 
 class AGN(L.Layer):
-    def __init__(self, epsilon=0.1, attn_initializer=None,  **kwargs):
+    def __init__(self, epsilon=0.1, **kwargs):
         super(AGN, self).__init__(**kwargs)
         self.epsilon = epsilon
-        self.attn_initializer = attn_initializer
         self.supports_masking = False
 
     def call(self, inputs):
         X, gi = inputs
-        valve = L.Activation('sigmoid')(X)
+        fea_dim = K.int_shape(X)[-1]
+        valve = L.Dense(fea_dim, activation='sigmoid')(X)
+        X_t = L.Dense(fea_dim, activation='relu')(X)
         upper = K.cast(K.greater(valve, 0.5 + self.epsilon), K.floatx())
         lower = K.cast(K.less(valve, 0.5 - self.epsilon), K.floatx())
-        enhanced = X + (1.0 - (upper + lower)) * gi
-        return SeqSelfAttention(attention_activation='tanh', kernel_initializer=self.attn_initializer)(enhanced)
+        enhanced = X_t + (1.0 - (upper + lower)) * gi
+        return SelfAttention(return_attention=True)(enhanced)
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0][0], input_shape[0][1], input_shape[0][2])
+        return [(input_shape[0][0], input_shape[0][1], input_shape[0][2]),
+                (input_shape[0][0], input_shape[0][1], input_shape[0][1])]
+
+    def compute_mask(self, inputs, mask=None):
+        return [mask, None]
 
 
 class AGNClassifier:
@@ -160,35 +164,34 @@ class AGNClassifier:
         self.config = config
         # load pretrained bert
         self.model = None
+        self.attn_model = None
         self.build()
 
     def build(self):
-        K.clear_session()
-        bert = build_transformer_model(
+        bert_model, _ = load_bert(
             config_path=os.path.join(self.config['pretrained_model_dir'],
-                                     f'{self.config["pretrained_model_type"]}_config.json'),
+                                     'bert_config.json'),
             checkpoint_path=os.path.join(self.config['pretrained_model_dir'],
-                                         f'{self.config["pretrained_model_type"]}_model.ckpt'),
-            model=self.config["pretrained_model_type"],
-            return_keras_model=False,
+                                         'bert_model.ckpt'),
         )
 
         # GI
-        gi_in = L.Input(name="gi", shape=(self.config["tcol_latent_size"], ), dtype="float32")
+        gi_in = L.Input(name="gi", shape=(self.config["max_len"], ), dtype="float32")
         gi = gi_in
 
         # AGN
-        X = NonMasking()(bert.model.output)
-        shapes = K.int_shape(X)
-        X = L.Dense(shapes[-1], activation='relu')(X)  # (B, L, D)
-        gi = L.Dense(self.config['max_len'], activation='relu')(gi)  # (B, L)
-        gi = L.Lambda(lambda x: K.expand_dims(x, 2))(gi)
-        X = AGN(epsilon=self.config['epsilon'], attn_initializer=bert.initializer)([X, gi])
-        output = L.GlobalMaxPooling1D()(X)
+        X = bert_model.output
+        gi = L.Dense(self.config['max_len'], activation='sigmoid')(gi)  # (B, L)
+        gi = L.Lambda(lambda x: K.expand_dims(x, 2))(gi)  # (B, L, 1)
+        X, attn_weight = AGN(epsilon=self.config['epsilon'])([X, gi])
+        output = L.Lambda(lambda x: K.max(x, 1))(X)
+        output = L.Dropout(0.2)(output)
         output = L.Dense(self.config['output_size'], activation='softmax')(output)
-        self.model = Model(inputs=(*bert.model.input, gi_in), outputs=output)
+        self.model = Model(inputs=(*bert_model.input, gi_in), outputs=output)
+        self.attn_model = Model(inputs=(*bert_model.input, gi_in), outputs=attn_weight)
+
         self.model.compile(
-            loss=sparse_categorical_crossentropy,
+            loss='sparse_categorical_crossentropy',
             optimizer=Adam(self.config['learning_rate']),
         )
         self.model.summary()
