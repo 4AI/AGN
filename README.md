@@ -1,5 +1,5 @@
 # AGN
-Official Code for Merging Statistical Feature via Adaptive Gate for Improved Text Classification (AAAI2021)
+Official Code for [Merging Statistical Feature via Adaptive Gate for Improved Text Classification](https://ojs.aaai.org/index.php/AAAI/article/view/17569) (AAAI2021)
 
 ## Prepare Data
 
@@ -65,9 +65,9 @@ for example:
   "learning_rate": 2e-5,
   "pretrained_model_dir": "/path/to/pretrained-bert/uncased-bert-base",
   "pretrained_model_type": "bert",
-  "tcol_latent_size": 200,
   "train_path": "/path/to/SST-2/train.jsonl",
   "dev_path": "/path/to/SST-2/test.jsonl",
+  "save_dir": "/dir/to/save",
   "epsilon": 0.2,
   "iterations": 10,
   "verbose": 1
@@ -84,7 +84,7 @@ for example:
 | learning_rate         | learning rate                                    |
 | pretrained_model_dir  | file directory of the pre-trained language model |
 | pretrained_model_type | bert or albert                                   |
-| tcol_latent_size      | latent dimension size of tcol                    |
+| save_dir      | dir to save model                    |
 | train_path            | data path of train set                           |
 | dev_path              | data path of develop set / test set              |
 | epsilon               | epsilon size of valve                            |
