@@ -6,7 +6,7 @@ import numpy as np
 from keras.callbacks import Callback
 from sklearn.metrics import f1_score, accuracy_score
 from boltons.iterutils import chunked_iter
-from bert4keras.snippets import sequence_padding
+from keras.preprocessing.sequence import pad_sequences
 
 
 class Metrics(Callback):
@@ -14,12 +14,14 @@ class Metrics(Callback):
                  batch_size,
                  max_len,
                  eval_data,
+                 save_path,
                  min_delta=1e-4,
                  patience=10):
         self.patience = patience
         self.min_delta = min_delta
         self.monitor_op = np.greater
 
+        self.save_path = save_path
         self.batch_size = batch_size
         self.max_len = max_len
         self.eval_data = eval_data
@@ -40,9 +42,9 @@ class Metrics(Callback):
             tcol_ids = [obj['tcol_ids'] for obj in chunk]
             true_labels = [obj['label_id'] for obj in chunk]
 
-            token_ids = sequence_padding(token_ids, length=self.max_len)
-            segment_ids = sequence_padding(segment_ids, length=self.max_len)
-            tcol_ids = sequence_padding(tcol_ids)
+            token_ids = pad_sequences(token_ids, maxlen=self.max_len, padding='post', truncating='post')
+            segment_ids = pad_sequences(segment_ids, maxlen=self.max_len, padding='post', truncating='post')
+            tcol_ids = pad_sequences(tcol_ids)
             pred = self.model.predict([token_ids, segment_ids, tcol_ids])
             pred = np.argmax(pred, 1)
             y_true += list(true_labels)
@@ -59,6 +61,8 @@ class Metrics(Callback):
         if self.monitor_op(val_f1 - self.min_delta, self.best) or self.monitor_op(self.min_delta, val_f1):
             self.best = val_f1
             self.wait = 0
+            print(f'new best model, save model to  {self.save_path}...')
+            self.model.save_weights(self.save_path)
         else:
             self.wait += 1
             if self.wait >= self.patience:
