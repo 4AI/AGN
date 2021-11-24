@@ -1,6 +1,6 @@
-tensorflow>=1.14.1,<2.0.0
 Keras==2.3.1
 numpy
-bert4keras==0.9.9
+langml
+seaborn
 boltons
 scikit_learn

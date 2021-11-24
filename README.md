@@ -1,5 +1,5 @@
 # AGN
-Official Code for Merging Statistical Feature via Adaptive Gate for Improved Text Classification (AAAI2021)
+Official Code for [Merging Statistical Feature via Adaptive Gate for Improved Text Classification](https://ojs.aaai.org/index.php/AAAI/article/view/17569) (AAAI2021)
 
 ## Prepare Data
 
@@ -13,7 +13,7 @@ Official Code for Merging Statistical Feature via Adaptive Gate for Improved Tex
 |   AG's News  | http://groups.di.unipi.it/~gulli/AG_corpus_of_news_articles      |
 | Yelp P. / F. |                   https://www.yelp.com/dataset/                  |
 
-You first need to download datasets from official sites. Then format the data into `JSONL` style, as follows:
+You first need to download datasets from official sites. Then convert the data into `JSONL` style, as follows:
 
 ```json
 {"label": "0", "text": "hoffman waits too long to turn his movie in an unexpected direction , and even then his tone retains a genteel , prep-school quality that feels dusty and leatherbound ."}
@@ -38,8 +38,16 @@ $ python -m venv agn
 $ source agn/bin/activate
 ```
 
-You should install TensorFlow in terms of your environment. You can install TensorFlow-GPU if exists GPU in your device, TensorFlow-CPU otherwise. Note that we only test the code under `tensorflow<2.0`, greater versions may not be compatible. We strongly recommend `tensorflow==1.15.4`.
+You should install TensorFlow in terms of your environment. Note that we only test the code under `tensorflow<2.0`, greater versions may not be compatible.
 
+Our environments:
+
+```bash
+$ pip list | egrep "tensorflow|Keras|langml"
+Keras                            2.3.1
+langml                           0.1.0
+tensorflow                       1.15.0
+```
 
 Next, You should install other python dependencies.
 
@@ -64,11 +72,10 @@ for example:
   "batch_size": 32,
   "learning_rate": 2e-5,
   "pretrained_model_dir": "/path/to/pretrained-bert/uncased-bert-base",
-  "pretrained_model_type": "bert",
-  "tcol_latent_size": 200,
   "train_path": "/path/to/SST-2/train.jsonl",
   "dev_path": "/path/to/SST-2/test.jsonl",
-  "epsilon": 0.2,
+  "save_dir": "/dir/to/save",
+  "epsilon": 0.05,
   "iterations": 10,
   "verbose": 1
 }
@@ -83,8 +90,7 @@ for example:
 | batch_size            | batch size                                       |
 | learning_rate         | learning rate                                    |
 | pretrained_model_dir  | file directory of the pre-trained language model |
-| pretrained_model_type | bert or albert                                   |
-| tcol_latent_size      | latent dimension size of tcol                    |
+| save_dir              | dir to save model                    |
 | train_path            | data path of train set                           |
 | dev_path              | data path of develop set / test set              |
 | epsilon               | epsilon size of valve                            |
@@ -95,3 +101,17 @@ Then you can start to train and evaluate by following shell script.
 ```bash
 CUDA_VISIBLE_DEVICES=0 python main.py /path/to/config.json
 ```
+
+After training is done, models will be stored in the specified `save_dir` folder.
+
+## Visualize Attention
+
+To visualize attention, you should train a model first following the above instruction, then run `visualize_attn.py` as follows:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python visualize_attn.py /path/to/your_config.json
+```
+
+After inputting the text to the prompt box, the code will analyze the text and save the attention figure to `attn_visualize.png`.
+
+Note that, in previous settings, we pick up a most distinguished feature dimension from 2D attention and visualize the selected feature (1D) attention. In the latest version, we visualize the whole 2D attention rather than 1D attention.
