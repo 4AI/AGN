@@ -75,7 +75,7 @@ for example:
   "train_path": "/path/to/SST-2/train.jsonl",
   "dev_path": "/path/to/SST-2/test.jsonl",
   "save_dir": "/dir/to/save",
-  "epsilon": 0.2,
+  "epsilon": 0.05,
   "iterations": 10,
   "verbose": 1
 }
