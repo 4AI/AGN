@@ -181,7 +181,7 @@ class AGNClassifier:
 
         # AGN
         X = bert_model.output
-        gi = L.Dense(self.config['max_len'])(gi)  # (B, L)
+        gi = L.Dense(self.config['max_len'], activation='tanh')(gi)  # (B, L)
         gi = L.Lambda(lambda x: K.expand_dims(x, 2))(gi)  # (B, L, 1)
         X, attn_weight = AGN(epsilon=self.config['epsilon'])([X, gi])
         output = L.Lambda(lambda x: K.max(x, 1))(X)
