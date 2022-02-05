@@ -66,17 +66,19 @@ for example:
 
 ```json
 {
-  "max_len": 60,
+  "max_len": 80,
   "ae_epochs": 100,
   "epochs": 10,
   "batch_size": 32,
-  "learning_rate": 2e-5,
+  "learning_rate": 0.00003,
   "pretrained_model_dir": "/path/to/pretrained-bert/uncased-bert-base",
   "train_path": "/path/to/SST-2/train.jsonl",
   "dev_path": "/path/to/SST-2/test.jsonl",
   "save_dir": "/dir/to/save",
   "epsilon": 0.05,
-  "iterations": 10,
+  "dropout": 0.3,
+  "fgm_epsilon": 0.3,
+  "iterations": 1,
   "verbose": 1
 }
 ```
@@ -90,10 +92,12 @@ for example:
 | batch_size            | batch size                                       |
 | learning_rate         | learning rate                                    |
 | pretrained_model_dir  | file directory of the pre-trained language model |
-| save_dir              | dir to save model                    |
+| save_dir              | dir to save model                                |
 | train_path            | data path of train set                           |
 | dev_path              | data path of develop set / test set              |
 | epsilon               | epsilon size of valve                            |
+| apply_fgm             | whether to apply fgm attack, default tru         |
+| fgm_epsilon           | epsilon of fgm, default 0.2                      |
 
 
 Then you can start to train and evaluate by following shell script.
