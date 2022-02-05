@@ -3,14 +3,22 @@
 """ DataLoader
 """
 
+import os
 import re
 import json
 import pickle
 from collections import defaultdict
 
-import numpy as np
-from keras.preprocessing.sequence import pad_sequences
+seed_value = int(os.getenv('RANDOM_SEED', -1))
+if seed_value != -1:
+    import random
+    random.seed(seed_value)
+    import numpy as np
+    np.random.seed(seed_value)
+    import tensorflow as tf
+    tf.set_random_seed(seed_value)
 
+from keras.preprocessing.sequence import pad_sequences
 
 from model import VariationalAutoencoder, Autoencoder
 
