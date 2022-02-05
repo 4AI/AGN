@@ -4,3 +4,4 @@ langml
 seaborn
 boltons
 scikit_learn
+bert4keras
