@@ -103,8 +103,11 @@ for example:
 Then you can start to train and evaluate by following shell script.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py /path/to/config.json
+export TF_KERAS=1; CUDA_VISIBLE_DEVICES=0 python main.py /path/to/config.json
 ```
+
+please set `TF_KERAS=1` to use AdamW.
+
 
 After training is done, models will be stored in the specified `save_dir` folder.
 
@@ -113,7 +116,7 @@ After training is done, models will be stored in the specified `save_dir` folder
 To visualize attention, you should train a model first following the above instruction, then run `visualize_attn.py` as follows:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python visualize_attn.py /path/to/your_config.json
+export TF_KERAS=1; CUDA_VISIBLE_DEVICES=0 python visualize_attn.py /path/to/your_config.json
 ```
 
 After inputting the text to the prompt box, the code will analyze the text and save the attention figure to `attn_visualize.png`.
