@@ -5,6 +5,15 @@ import sys
 import json
 from pprint import pprint
 
+seed_value = int(os.getenv('RANDOM_SEED', -1))
+if seed_value != -1:
+    import random
+    random.seed(seed_value)
+    import numpy as np
+    np.random.seed(seed_value)
+    import tensorflow as tf
+    tf.set_random_seed(seed_value)
+
 from langml.tokenizer import WPTokenizer
 
 from dataloader import DataLoader, DataGenerator
@@ -55,6 +64,7 @@ for idx in range(1, config['iterations'] + 1):
         config['max_len'],
         dataloader.dev_set,
         os.path.join(config['save_dir'], 'clf_model.weights'))
+    config['steps_per_epoch'] = generator.steps_per_epoch
     config['output_size'] = dataloader.label_size
     model = AGNClassifier(config)
     print("start to fitting...")
