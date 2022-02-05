@@ -2,16 +2,90 @@
 
 import os
 
-import keras
-import keras.layers as L
-import keras.backend as K
-from keras.models import Model
-from keras.optimizers import Adam
-from keras.callbacks import EarlyStopping
+seed_value = int(os.getenv('RANDOM_SEED', -1))
+if seed_value != -1:
+    import random
+    random.seed(seed_value)
+    import numpy as np
+    np.random.seed(seed_value)
+    import tensorflow as tf
+    tf.set_random_seed(seed_value)
+
+from langml import keras, K, L
 from sklearn.utils import shuffle
 from sklearn.model_selection import train_test_split
 from langml.plm.bert import load_bert
 from langml.layers import SelfAttention
+from bert4keras.optimizers import Adam, extend_with_weight_decay, extend_with_piecewise_linear_lr
+
+
+def search_layer(inputs, name, exclude_from=None):
+    if exclude_from is None:
+        exclude_from = set()
+
+    if isinstance(inputs, keras.layers.Layer):
+        layer = inputs
+    else:
+        layer = inputs._keras_history[0]
+
+    if layer.name == name:
+        return layer
+    elif layer in exclude_from:
+        return None
+    else:
+        exclude_from.add(layer)
+        if isinstance(layer, keras.models.Model):
+            model = layer
+            for layer in model.layers:
+                if layer.name == name:
+                    return layer
+        inbound_layers = layer._inbound_nodes[0].inbound_layers
+        if not isinstance(inbound_layers, list):
+            inbound_layers = [inbound_layers]
+        if len(inbound_layers) > 0:
+            for layer in inbound_layers:
+                layer = search_layer(layer, name, exclude_from)
+                if layer is not None:
+                    return layer
+
+
+def fgm(model, embedding_name, epsilon=1):
+    # modified from: https://github.com/bojone/bert4keras/blob/master/examples/task_iflytek_adversarial_training.py
+
+    if model.train_function is None:
+        model._make_train_function()
+
+    old_train_function = model.train_function
+
+    for output in model.outputs:
+        embedding_layer = search_layer(output, embedding_name)
+        if embedding_layer is not None:
+            break
+    if embedding_layer is None:
+        raise Exception('Embedding layer not found')
+
+    embeddings = embedding_layer.embeddings
+    gradients = K.gradients(model.total_loss, [embeddings])
+    gradients = K.zeros_like(embeddings) + gradients[0]
+
+    inputs = (
+        model._feed_inputs + model._feed_targets + model._feed_sample_weights
+    )
+    embedding_gradients = K.function(
+        inputs=inputs,
+        outputs=[gradients],
+        name='embedding_gradients',
+    )
+
+    def train_function(inputs):
+        grads = embedding_gradients(inputs)[0]
+        delta = epsilon * grads / (np.sqrt((grads**2).sum()) + 1e-8)
+        K.set_value(embeddings, K.eval(embeddings) + delta)
+        outputs = old_train_function(inputs)
+        K.set_value(embeddings, K.eval(embeddings) - delta)
+        return outputs
+
+    model.train_function = train_function
 
 
 class Sampling(L.Layer):
@@ -58,8 +132,8 @@ class VariationalAutoencoder:
             kl_loss *= -0.5
             return reconstruction_loss + kl_loss
 
-        self.autoencoder = Model(input_vec, decoded)
-        self.encoder = Model(input_vec, encoded)
+        self.autoencoder = keras.Model(input_vec, decoded)
+        self.encoder = keras.Model(input_vec, encoded)
         self.autoencoder.compile(optimizer='adam', loss=vae_loss)
 
     def fit(self, X, verbose=2):
@@ -76,7 +150,7 @@ class VariationalAutoencoder:
                              epochs=self.epochs,
                              batch_size=self.batch_size,
                              shuffle=True,
-                             callbacks=[EarlyStopping(patience=2)],
+                             callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)],
                              validation_data=(X_test, X_test), verbose=verbose)
 
 
@@ -98,8 +172,8 @@ class Autoencoder:
         input_vec = L.Input(shape=(input_dim,))
         encoded = L.Dense(self.latent_dim, activation=self.activation)(input_vec)
         decoded = L.Dense(input_dim, activation=self.activation)(encoded)
-        self.autoencoder = Model(input_vec, decoded)
-        self.encoder = Model(input_vec, encoded)
+        self.autoencoder = keras.Model(input_vec, decoded)
+        self.encoder = keras.Model(input_vec, encoded)
         self.autoencoder.compile(optimizer='adam', loss='mean_squared_error')
 
     def fit(self, X, verbose=2):
@@ -110,27 +184,8 @@ class Autoencoder:
                              epochs=self.epochs,
                              batch_size=self.batch_size,
                              shuffle=True,
-                             callbacks=[EarlyStopping(patience=2)],
+                             callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=5)],
                              validation_data=(X_test, X_test), verbose=verbose)
-
-
-class NonMasking(L.Layer):
-    def __init__(self, **kwargs):
-        self.supports_masking = True
-        super(NonMasking, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        input_shape = input_shape
-
-    def compute_mask(self, input, input_mask=None):
-        # do not pass the mask to the next layers
-        return None
-
-    def call(self, x, mask=None):
-        return x
-
-    def get_output_shape_for(self, input_shape):
-        return input_shape
 
 
 class AGN(L.Layer):
@@ -174,7 +229,8 @@ class AGNClassifier:
             checkpoint_path=os.path.join(self.config['pretrained_model_dir'],
                                          'bert_model.ckpt'),
         )
-
+        text_mask = L.Lambda(lambda x: K.cast(
+            K.expand_dims(K.greater(x, 0), 2), K.floatx()))(bert_model.input[0])
         # GI
         gi_in = L.Input(name="gi", shape=(self.config["max_len"], ), dtype="float32")
         gi = gi_in
@@ -184,14 +240,34 @@ class AGNClassifier:
         gi = L.Dense(self.config['max_len'], activation='tanh')(gi)  # (B, L)
         gi = L.Lambda(lambda x: K.expand_dims(x, 2))(gi)  # (B, L, 1)
         X, attn_weight = AGN(epsilon=self.config['epsilon'])([X, gi])
+        X = L.Lambda(lambda x:  x[0] - 1e10 * (1.0 - x[1]))([X, text_mask])
         output = L.Lambda(lambda x: K.max(x, 1))(X)
-        output = L.Dropout(0.2)(output)
+        #output = L.Dense(128, activation='relu')(output)
+        output = L.Dropout(self.config.get('dropout', 0.2))(output)
         output = L.Dense(self.config['output_size'], activation='softmax')(output)
-        self.model = Model(inputs=(*bert_model.input, gi_in), outputs=output)
-        self.attn_model = Model(inputs=(*bert_model.input, gi_in), outputs=attn_weight)
+        self.model = keras.Model(inputs=(*bert_model.input, gi_in), outputs=output)
+        self.attn_model = keras.Model(inputs=(*bert_model.input, gi_in), outputs=attn_weight)
+
+        optimizer = extend_with_weight_decay(Adam)
+        optimizer = extend_with_piecewise_linear_lr(optimizer)
+        optimizer_params = {
+            'learning_rate': self.config['learning_rate'],
+            'lr_schedule': {
+                self.config['steps_per_epoch'] * 2: 1,
+                self.config['steps_per_epoch'] * 3: 0.2,
+                self.config['steps_per_epoch'] * self.config['epochs']: 0.1
+            },
+            'weight_decay_rate': 0.01,
+            'exclude_from_weight_decay': ['Norm', 'bias'],
+            'bias_correction': False,
+        }
 
         self.model.compile(
             loss='sparse_categorical_crossentropy',
-            optimizer=Adam(self.config['learning_rate']),
+            optimizer=optimizer(**optimizer_params),
         )
         self.model.summary()
+
+        if self.config.get('apply_fgm', True):
+            print('apply fgm')
+            fgm(self.model, 'Embedding-Token', self.config.get('fgm_epsilon', 0.2))
